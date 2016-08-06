@@ -1,0 +1,111 @@
+#!/bin/bash
+#
+### BEGIN INIT INFO
+# Provides:          tunnel-ctl
+# Required-Start:    $syslog
+# Required-Stop:     $syslog
+# Should-Start:      $network $time
+# Should-Stop:       $network $time
+# Default-Start:     2 3 4 5
+# Default-Stop:      0 1 6
+# Short-Description: Start and stop the tunnel-ctl service daemon.
+# Description:       Controls the main tunnel-ctl service daemon "tunnel-ctl".
+### END INIT INFO
+#
+set -e
+set -u
+${DEBIAN_SCRIPT_DEBUG:+ set -v -x}
+
+EXECUTABLE="/tmp/service_main.py"
+test -x "$EXECUTABLE" || { echo "No executable $EXECUTABLE file found." > /dev/stderr; exit 0; }
+
+. /lib/lsb/init-functions
+
+SELF=$(cd $(dirname $0); pwd -P)/$(basename $0)
+
+# priority can be overriden and "-s" adds output to stderr
+ERR_LOGGER="logger -p daemon.err -t /etc/init.d/tunnel-ctl -i"
+
+# Safeguard (relative paths, core dumps..)
+cd /
+umask 077
+
+check_alive() {
+}
+
+#
+# main()
+#
+
+case "${1:-''}" in
+  'start')
+	# Start daemon
+	log_daemon_msg "Starting tunnel-ctl service" "tunnel-ctl"
+	if check_alive nowarn; then
+	   log_progress_msg "already running"
+	   log_end_msg 0
+	else
+	    # Start tunnel-ctl! 
+  	    su - root -s /bin/sh -c "\"$EXECUTABLE\" > /dev/null 2>&1 &"
+
+	    for i in $(seq 1 30); do
+            sleep 1
+	        if check_alive ; then break; fi
+		    log_progress_msg "."
+	    done
+	    if check_alive; then
+            log_end_msg 0
+	    else
+	        log_end_msg 1
+		    log_failure_msg "Service starting failed"
+	    fi
+	fi
+	;;
+
+  'stop')
+	log_daemon_msg "Stopping tunnel-ctl daemon" "tunnel-ctl"
+	if check_alive; then
+	  if [ "$r" -ne 0 ]; then
+	    log_end_msg 1
+	    [ "$VERBOSE" != "no" ] && log_failure_msg "Error: $shutdown_out"
+	    log_daemon_msg "Killing tunnel-ctl service by signal" "tunnel-ctl"
+	    # killall -15 tunnel-ctl
+        server_down=
+	    for i in 1 2 3 4 5 6 7 8 9 10; do
+          sleep 1
+          if ! check_alive; then server_down=1; break; fi
+        done
+        # if test -z "$server_down"; then killall -9 tunnel-ctl; fi
+	  fi
+    fi
+
+    if check_alive warn; then
+	  log_end_msg 1
+	  log_failure_msg "Failed to stop tunnel-ctl service, please stop manually"
+	  exit -1
+	else
+	  log_end_msg 0
+    fi
+	;;
+
+  'restart')
+	$SELF stop
+	$SELF start 
+	;;
+
+  'status')
+	if check_alive; then
+	  log_action_msg "The service is running."
+	else
+	  log_action_msg "Tunnel-ctl is stopped."
+	  exit 3
+	fi
+  	;;
+
+  *)
+	echo "Usage: $SELF start|stop|restart|status"
+	exit 1
+	;;
+esac
+
+exit 0
